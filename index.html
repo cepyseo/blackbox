@@ -47,120 +47,84 @@
     <div id="debug"></div>
 
     <script>
-        function generateUUID() {
-            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                const r = Math.random() * 16 | 0;
-                const v = c == 'x' ? r : (r & 0x3 | 0x8);
-                return v.toString(16);
-            });
+        const API_KEYS = [
+            'BLACKBOX:7ecc2e5bb8e8802e06f6f0ba4c1f32f8',
+            'BLACKBOX:0c24b6e880854c6593b2013bbd69fcd1',
+            'BLACKBOX:2b7e151628aed2a6abf7158809cf4f3c',
+            'BLACKBOX:feb7f5fb3f1f1a2834275612840d1108'
+        ];
+
+        function getRandomApiKey() {
+            return API_KEYS[Math.floor(Math.random() * API_KEYS.length)];
         }
 
-        function generateRandomId(length = 7) {
-            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-            return Array.from(crypto.getRandomValues(new Uint8Array(length)))
-                .map(x => chars[x % chars.length])
-                .join('');
+        async function fetchResponse(prompt, retries = 3) {
+            const apiUrl = 'https://api.blackbox.ai/v4/chat';
+            
+            document.getElementById('status').textContent = 'Initializing request...';
+
+            for (let attempt = 0; attempt < retries; attempt++) {
+                try {
+                    debug(`Attempt ${attempt + 1} with new API key`);
+                    
+                    const headers = {
+                        'Authorization': getRandomApiKey(),
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'Client-Agent': 'web',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0',
+                    };
+
+                    const data = {
+                        "prompt": prompt,
+                        "modelVersion": "2",
+                        "temperature": 0.7,
+                        "maxTokens": 1024,
+                        "topP": 0.7,
+                        "stream": false
+                    };
+
+                    document.getElementById('status').textContent = 'Sending request...';
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(data)
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`HTTP ${response.status}: ${errorText}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    if (result.error) {
+                        throw new Error(result.error);
+                    }
+
+                    document.getElementById('status').textContent = 'Request completed successfully';
+                    return { response: result.response || result.text || 'No content' };
+
+                } catch (error) {
+                    debug(`Error: ${error.message}`);
+                    if (attempt === retries - 1) {
+                        throw error;
+                    }
+                    const delay = Math.pow(2, attempt) * 1000;
+                    document.getElementById('status').textContent = `Retrying in ${delay/1000}s...`;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
         }
 
         const debug = msg => {
             const debugEl = document.getElementById('debug');
             debugEl.style.display = 'block';
-            debugEl.textContent += msg + '\n';
+            debugEl.textContent += `[${new Date().toISOString()}] ${msg}\n`;
         };
 
-        async function fetchResponse(prompt, retries = 3) {
-            const messageId = generateRandomId();
-            const sessionId = generateRandomId();
-            const validationToken = generateUUID();
-
-            // Try multiple API endpoints
-            const endpoints = [
-                'https://blackbox.ai/api/chat',
-                'https://www.blackbox.ai/api/chat',
-                'https://www.blackboxai.com/api/chat'
-            ];
-
-            document.getElementById('status').textContent = 'Initializing request...';
-
-            for (let attempt = 0; attempt < retries; attempt++) {
-                for (const apiUrl of endpoints) {
-                    try {
-                        debug(`Attempting ${apiUrl} (try ${attempt + 1})`);
-                        
-                        const headers = {
-                            'accept': 'application/json',
-                            'accept-language': 'en-US,en;q=0.9',
-                            'content-type': 'application/json',
-                            'origin': new URL(apiUrl).origin,
-                            'referer': `${new URL(apiUrl).origin}/`,
-                            'sec-fetch-dest': 'empty',
-                            'sec-fetch-mode': 'cors',
-                            'sec-fetch-site': 'same-origin',
-                            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                        };
-
-                        const data = {
-                            "messages": [{
-                                "role": "user",
-                                "content": prompt,
-                                "id": messageId
-                            }],
-                            "agentMode": "code",
-                            "id": sessionId,
-                            "codeModelMode": true,
-                            "validated": validationToken,
-                            "stream": true
-                        };
-
-                        document.getElementById('status').textContent = `Trying ${apiUrl}...`;
-
-                        const response = await fetch(apiUrl, {
-                            method: 'POST',
-                            headers: headers,
-                            body: JSON.stringify(data),
-                            credentials: 'include',
-                            mode: 'cors'
-                        });
-
-                        if (!response.ok) {
-                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                        }
-
-                        if (!response.body) {
-                            throw new Error('Response body is null');
-                        }
-
-                        const reader = response.body.getReader();
-                        let output = '';
-
-                        while (true) {
-                            const { done, value } = await reader.read();
-                            if (done) break;
-                            
-                            const chunk = new TextDecoder().decode(value);
-                            debug(`Received chunk: ${chunk.length} bytes`);
-                            output += chunk;
-                        }
-
-                        document.getElementById('status').textContent = 'Request completed successfully';
-                        return { response: output || 'No response content' };
-
-                    } catch (error) {
-                        debug(`Error with ${apiUrl}: ${error.message}`);
-                        continue;
-                    }
-                }
-
-                // Wait before next retry
-                const delay = Math.pow(2, attempt) * 1000;
-                document.getElementById('status').textContent = `Waiting ${delay/1000}s before retry...`;
-                await new Promise(resolve => setTimeout(resolve, delay));
-            }
-
-            throw new Error('All endpoints failed');
-        }
-
-        // Get prompt from URL parameter and initialize
+        // Initialize from URL parameter
         const urlParams = new URLSearchParams(window.location.search);
         const prompt = urlParams.get('p');
 
@@ -175,7 +139,7 @@
                     responseElement.className = '';
                 })
                 .catch(error => {
-                    responseElement.textContent = `Error: ${error.message}. Please check your network connection and try again.`;
+                    responseElement.textContent = `Error: ${error.message}`;
                     responseElement.className = 'error';
                 });
         }
