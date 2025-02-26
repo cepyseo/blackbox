@@ -25,29 +25,61 @@
             color: #d32f2f;
             border-color: #ffa4a4;
         }
+        .status-indicator {
+            padding: 8px;
+            margin: 10px 0;
+            background: #e8f5e9;
+            border-radius: 4px;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
+    <div class="status-indicator" id="status"></div>
     <div id="response">Waiting for prompt parameter...</div>
 
     <script>
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                const r = Math.random() * 16 | 0;
+                const v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        function generateRandomId(length = 7) {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            return Array.from(crypto.getRandomValues(new Uint8Array(length)))
+                .map(x => chars[x % chars.length])
+                .join('');
+        }
+
         async function fetchResponse(prompt, retries = 3) {
             const apiUrl = 'https://www.blackbox.ai/api/chat';
+            const messageId = generateRandomId();
+            const sessionId = generateRandomId();
+            const validationToken = generateUUID();
+
+            document.getElementById('status').textContent = 'Using generated tokens...';
+
             const headers = {
                 'accept': '*/*',
                 'accept-language': 'en-US,en;q=0.9',
                 'content-type': 'application/json',
                 'origin': 'https://www.blackbox.ai',
                 'referer': 'https://www.blackbox.ai/',
-                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             };
 
             const data = {
-                "messages": [{ "role": "user", "content": prompt, "id": "54lcaEJ" }],
+                "messages": [{ 
+                    "role": "user", 
+                    "content": prompt, 
+                    "id": messageId 
+                }],
                 "agentMode": {},
-                "id": "RDyqb0u",
+                "id": sessionId,
                 "codeModelMode": true,
-                "validated": "00f37b34-a166-4efb-bce5-1312d87f2f94",
+                "validated": validationToken,
                 "webSearchModePrompt": true
             };
 
