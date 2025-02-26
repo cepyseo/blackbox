@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blackbox API Interface</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        #response {
+            white-space: pre-wrap;
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <div id="response">Waiting for prompt parameter...</div>
+
+    <script>
+        async function fetchResponse(prompt) {
+            try {
+                const apiUrl = 'https://www.blackbox.ai/api/chat';
+                const headers = {
+                    'authority': 'www.blackbox.ai',
+                    'accept': '*/*',
+                    'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'content-type': 'application/json',
+                    'origin': 'https://www.blackbox.ai',
+                    'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36'
+                };
+
+                const data = {
+                    "messages": [{ "role": "user", "content": prompt, "id": "54lcaEJ" }],
+                    "agentMode": {},
+                    "id": "RDyqb0u",
+                    "codeModelMode": true,
+                    "validated": "00f37b34-a166-4efb-bce5-1312d87f2f94",
+                    "webSearchModePrompt": true
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(data)
+                });
+
+                const reader = response.body.getReader();
+                let output = '';
+                let search = [];
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    output += new TextDecoder().decode(value);
+
+                    const match = output.match(/\$~~~\$(.*?)\$~~~\$/);
+                    if (match) {
+                        search = JSON.parse(match[1]);
+                        const text = output.replace(match[0], '').split('\n\n\n\n')[1];
+                        output = text || '';
+                    }
+                }
+
+                return { search, response: output };
+            } catch (error) {
+                throw new Error(`API request failed: ${error.message}`);
+            }
+        }
+
+        // Get prompt from URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const prompt = urlParams.get('p');
+
+        if (prompt) {
+            const responseElement = document.getElementById('response');
+            responseElement.textContent = 'Loading...';
+
+            fetchResponse(prompt)
+                .then(result => {
+                    responseElement.textContent = result.response;
+                })
+                .catch(error => {
+                    responseElement.textContent = error.message;
+                    responseElement.classList.add('error');
+                });
+        }
+    </script>
+</body>
+</html>
