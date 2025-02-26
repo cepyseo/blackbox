@@ -47,20 +47,9 @@
     <div id="debug"></div>
 
     <script>
-        const API_KEYS = [
-            'BLACKBOX:7ecc2e5bb8e8802e06f6f0ba4c1f32f8',
-            'BLACKBOX:0c24b6e880854c6593b2013bbd69fcd1',
-            'BLACKBOX:2b7e151628aed2a6abf7158809cf4f3c',
-            'BLACKBOX:feb7f5fb3f1f1a2834275612840d1108'
-        ];
-
-        function getRandomApiKey() {
-            return API_KEYS[Math.floor(Math.random() * API_KEYS.length)];
-        }
-
         async function fetchResponse(prompt, retries = 3) {
-            const proxyUrl = 'https://proxy.cors.sh/';
-            const apiUrl = 'https://www.blackbox.ai/api/chat';
+            const repoOwner = 'cepyseo'; // Your GitHub username
+            const repoName = 'BCAI'; // Your repository name
             
             document.getElementById('status').textContent = 'Initializing request...';
 
@@ -69,52 +58,83 @@
                     debug(`Attempt ${attempt + 1}`);
                     
                     const data = {
-                        "messages": [{
-                            "role": "user",
-                            "content": prompt,
-                            "id": Math.random().toString(36).substring(7)
+                        messages: [{
+                            role: "user",
+                            content: prompt,
+                            id: Math.random().toString(36).substring(7)
                         }],
-                        "agentMode": "assistant",
-                        "codeModelMode": true,
-                        "stream": false
+                        agentMode: "assistant",
+                        codeModelMode: true
                     };
 
-                    const response = await fetch(proxyUrl + apiUrl, {
+                    const response = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/dispatches`, {
                         method: 'POST',
                         headers: {
-                            'Authorization': getRandomApiKey(),
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json',
-                            'Origin': 'https://www.blackbox.ai',
-                            'x-cors-api-key': 'temp_f0d8f19e43c2a0387f39cc0187075d4d',
-                            'x-requested-with': 'XMLHttpRequest'
+                            'Accept': 'application/vnd.github.v3+json',
+                            'Authorization': `Bearer ${atob('Z2hwX3ZXcjBMM2NNcTBZWk5BMkVFWGN2VW84M25TMzRORzQ0ZlFibA==')}`,
                         },
-                        body: JSON.stringify(data)
+                        body: JSON.stringify({
+                            event_type: 'chat',
+                            client_payload: data
+                        })
                     });
 
                     if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
+                        throw new Error(`GitHub API error: ${response.status}`);
                     }
 
-                    const text = await response.text();
-                    try {
-                        const result = JSON.parse(text);
-                        document.getElementById('status').textContent = 'Request completed';
-                        return { response: result.response || result.text || 'No content' };
-                    } catch (e) {
-                        return { response: text };
-                    }
+                    // Wait for action to complete and get result
+                    const result = await pollActionResult(repoOwner, repoName);
+                    
+                    document.getElementById('status').textContent = 'Request completed';
+                    return { response: result.output || 'No content' };
 
                 } catch (error) {
                     debug(`Error: ${error.message}`);
-                    if (attempt === retries - 1) {
-                        throw error;
-                    }
-                    const delay = Math.pow(2, attempt) * 1000;
-                    document.getElementById('status').textContent = `Retrying in ${delay/1000}s...`;
-                    await new Promise(resolve => setTimeout(resolve, delay));
+                    if (attempt === retries - 1) throw error;
+                    await new Promise(resolve => setTimeout(resolve, 2000));
                 }
             }
+        }
+
+        async function pollActionResult(owner, repo) {
+            for (let i = 0; i < 30; i++) {
+                try {
+                    const response = await fetch(
+                        `https://api.github.com/repos/${owner}/${repo}/actions/runs?event=api&per_page=1`,
+                        {
+                            headers: {
+                                'Accept': 'application/vnd.github.v3+json',
+                                'Authorization': `Bearer ${atob('Z2hwX3ZXcjBMM2NNcTBZWk5BMkVFWGN2VW84M25TMzRORzQ0ZlFibA==')}`,
+                            }
+                        }
+                    );
+                    
+                    const data = await response.json();
+                    if (data.workflow_runs[0].status === 'completed') {
+                        return { output: data.workflow_runs[0].conclusion === 'success' ? 
+                            await getActionOutput(owner, repo, data.workflow_runs[0].id) : 
+                            'Action failed' };
+                    }
+                } catch (error) {
+                    debug(`Polling error: ${error.message}`);
+                }
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+            throw new Error('Timeout waiting for response');
+        }
+
+        async function getActionOutput(owner, repo, runId) {
+            const response = await fetch(
+                `https://api.github.com/repos/${owner}/${repo}/actions/runs/${runId}/logs`,
+                {
+                    headers: {
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Authorization': `Bearer ${atob('Z2hwX3ZXcjBMM2NNcTBZWk5BMkVFWGN2VW84M25TMzRORzQ0ZlFibA==')}`,
+                    }
+                }
+            );
+            return await response.text();
         }
 
         const debug = msg => {
