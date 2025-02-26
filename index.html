@@ -59,71 +59,62 @@
         }
 
         async function fetchResponse(prompt, retries = 3) {
-            const corsProxies = [
-                'https://api.codetabs.com/v1/proxy?quest=',
-                'https://corsproxy.io/?',
-                'https://cors-anywhere.herokuapp.com/'
-            ];
-            
+            const proxyUrl = 'https://proxy.cors.sh/';
             const apiUrl = 'https://www.blackbox.ai/api/chat';
+            
             document.getElementById('status').textContent = 'Initializing request...';
 
             for (let attempt = 0; attempt < retries; attempt++) {
-                for (const proxy of corsProxies) {
-                    try {
-                        debug(`Attempt ${attempt + 1} using ${proxy}`);
-                        
-                        const data = {
-                            "messages": [{
-                                "role": "user",
-                                "content": prompt,
-                                "id": Math.random().toString(36).substring(7)
-                            }],
-                            "agentMode": "assistant",
-                            "codeModelMode": true,
-                            "stream": false
-                        };
+                try {
+                    debug(`Attempt ${attempt + 1}`);
+                    
+                    const data = {
+                        "messages": [{
+                            "role": "user",
+                            "content": prompt,
+                            "id": Math.random().toString(36).substring(7)
+                        }],
+                        "agentMode": "assistant",
+                        "codeModelMode": true,
+                        "stream": false
+                    };
 
-                        document.getElementById('status').textContent = 'Sending request...';
+                    const response = await fetch(proxyUrl + apiUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': getRandomApiKey(),
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'Origin': 'https://www.blackbox.ai',
+                            'x-cors-api-key': 'temp_f0d8f19e43c2a0387f39cc0187075d4d',
+                            'x-requested-with': 'XMLHttpRequest'
+                        },
+                        body: JSON.stringify(data)
+                    });
 
-                        const response = await fetch(proxy + apiUrl, {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': getRandomApiKey(),
-                                'Content-Type': 'application/json',
-                                'Accept': 'application/json',
-                                'Origin': 'https://www.blackbox.ai'
-                            },
-                            body: JSON.stringify(data)
-                        });
-
-                        if (!response.ok) {
-                            throw new Error(`HTTP ${response.status}`);
-                        }
-
-                        const text = await response.text();
-                        let result;
-                        try {
-                            result = JSON.parse(text);
-                        } catch (e) {
-                            result = { response: text };
-                        }
-
-                        document.getElementById('status').textContent = 'Request completed successfully';
-                        return { response: result.response || result.text || text };
-
-                    } catch (error) {
-                        debug(`Error with ${proxy}: ${error.message}`);
-                        continue;
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
                     }
-                }
-                
-                const delay = Math.pow(2, attempt) * 1000;
-                document.getElementById('status').textContent = `All proxies failed, retrying in ${delay/1000}s...`;
-                await new Promise(resolve => setTimeout(resolve, delay));
-            }
 
-            throw new Error('All proxies and attempts failed');
+                    const text = await response.text();
+                    try {
+                        const result = JSON.parse(text);
+                        document.getElementById('status').textContent = 'Request completed';
+                        return { response: result.response || result.text || 'No content' };
+                    } catch (e) {
+                        return { response: text };
+                    }
+
+                } catch (error) {
+                    debug(`Error: ${error.message}`);
+                    if (attempt === retries - 1) {
+                        throw error;
+                    }
+                    const delay = Math.pow(2, attempt) * 1000;
+                    document.getElementById('status').textContent = `Retrying in ${delay/1000}s...`;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
         }
 
         const debug = msg => {
