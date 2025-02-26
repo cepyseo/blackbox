@@ -21,6 +21,10 @@
         .error {
             color: red;
         }
+        .loading {
+            color: #666;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -36,7 +40,8 @@
                     'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
                     'content-type': 'application/json',
                     'origin': 'https://www.blackbox.ai',
-                    'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36'
+                    'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36',
+                    'Access-Control-Allow-Origin': '*'
                 };
 
                 const data = {
@@ -51,8 +56,13 @@
                 const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: headers,
-                    body: JSON.stringify(data)
+                    body: JSON.stringify(data),
+                    mode: 'cors'
                 });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
 
                 const reader = response.body.getReader();
                 let output = '';
@@ -65,14 +75,19 @@
 
                     const match = output.match(/\$~~~\$(.*?)\$~~~\$/);
                     if (match) {
-                        search = JSON.parse(match[1]);
-                        const text = output.replace(match[0], '').split('\n\n\n\n')[1];
-                        output = text || '';
+                        try {
+                            search = JSON.parse(match[1]);
+                            const text = output.replace(match[0], '').split('\n\n\n\n')[1];
+                            output = text || '';
+                        } catch (e) {
+                            console.error('Error parsing search results:', e);
+                        }
                     }
                 }
 
-                return { search, response: output };
+                return { search, response: output || 'No response content' };
             } catch (error) {
+                console.error('API Error:', error);
                 throw new Error(`API request failed: ${error.message}`);
             }
         }
@@ -84,14 +99,16 @@
         if (prompt) {
             const responseElement = document.getElementById('response');
             responseElement.textContent = 'Loading...';
+            responseElement.className = 'loading';
 
-            fetchResponse(prompt)
+            fetchResponse(decodeURIComponent(prompt))
                 .then(result => {
                     responseElement.textContent = result.response;
+                    responseElement.className = '';
                 })
                 .catch(error => {
-                    responseElement.textContent = error.message;
-                    responseElement.classList.add('error');
+                    responseElement.textContent = `Error: ${error.message}`;
+                    responseElement.className = 'error';
                 });
         }
     </script>
