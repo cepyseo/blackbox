@@ -7,23 +7,23 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 20px auto;
-            padding: 0 20px;
+            margin: 20px;
+            line-height: 1.6;
         }
         #response {
-            white-space: pre-wrap;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-height: 50px;
+        }
+        #response.loading {
             background: #f5f5f5;
-            padding: 20px;
-            border-radius: 5px;
-            margin-top: 20px;
-        }
-        .error {
-            color: red;
-        }
-        .loading {
             color: #666;
-            font-style: italic;
+        }
+        #response.error {
+            background: #fff0f0;
+            color: #d32f2f;
+            border-color: #ffa4a4;
         }
     </style>
 </head>
@@ -31,74 +31,79 @@
     <div id="response">Waiting for prompt parameter...</div>
 
     <script>
-        async function fetchResponse(prompt) {
-            try {
-                const apiUrl = 'https://www.blackbox.ai/api/chat';
-                const headers = {
-                    'authority': 'www.blackbox.ai',
-                    'accept': '*/*',
-                    'accept-language': 'id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7',
-                    'content-type': 'application/json',
-                    'origin': 'https://www.blackbox.ai',
-                    'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36',
-                    'Access-Control-Allow-Origin': '*'
-                };
+        async function fetchResponse(prompt, retries = 3) {
+            const apiUrl = 'https://www.blackbox.ai/api/chat';
+            const headers = {
+                'accept': '*/*',
+                'accept-language': 'en-US,en;q=0.9',
+                'content-type': 'application/json',
+                'origin': 'https://www.blackbox.ai',
+                'referer': 'https://www.blackbox.ai/',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            };
 
-                const data = {
-                    "messages": [{ "role": "user", "content": prompt, "id": "54lcaEJ" }],
-                    "agentMode": {},
-                    "id": "RDyqb0u",
-                    "codeModelMode": true,
-                    "validated": "00f37b34-a166-4efb-bce5-1312d87f2f94",
-                    "webSearchModePrompt": true
-                };
+            const data = {
+                "messages": [{ "role": "user", "content": prompt, "id": "54lcaEJ" }],
+                "agentMode": {},
+                "id": "RDyqb0u",
+                "codeModelMode": true,
+                "validated": "00f37b34-a166-4efb-bce5-1312d87f2f94",
+                "webSearchModePrompt": true
+            };
 
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify(data),
-                    mode: 'cors'
-                });
+            for (let attempt = 0; attempt < retries; attempt++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(data),
+                        credentials: 'include'
+                    });
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
 
-                const reader = response.body.getReader();
-                let output = '';
-                let search = [];
+                    const reader = response.body.getReader();
+                    let output = '';
+                    let search = [];
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    output += new TextDecoder().decode(value);
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        output += new TextDecoder().decode(value);
 
-                    const match = output.match(/\$~~~\$(.*?)\$~~~\$/);
-                    if (match) {
-                        try {
-                            search = JSON.parse(match[1]);
-                            const text = output.replace(match[0], '').split('\n\n\n\n')[1];
-                            output = text || '';
-                        } catch (e) {
-                            console.error('Error parsing search results:', e);
+                        const match = output.match(/\$~~~\$(.*?)\$~~~\$/);
+                        if (match) {
+                            try {
+                                search = JSON.parse(match[1]);
+                                const text = output.replace(match[0], '').split('\n\n\n\n')[1];
+                                output = text || '';
+                            } catch (e) {
+                                console.error('Error parsing search results:', e);
+                            }
                         }
                     }
-                }
 
-                return { search, response: output || 'No response content' };
-            } catch (error) {
-                console.error('API Error:', error);
-                throw new Error(`API request failed: ${error.message}`);
+                    return { search, response: output || 'No response content' };
+                } catch (error) {
+                    console.error(`Attempt ${attempt + 1} failed:`, error);
+                    if (attempt === retries - 1) {
+                        throw new Error(`Failed after ${retries} attempts: ${error.message}`);
+                    }
+                    // Wait before retrying (exponential backoff)
+                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+                }
             }
         }
 
-        // Get prompt from URL parameter
+        // Get prompt from URL parameter and initialize
         const urlParams = new URLSearchParams(window.location.search);
         const prompt = urlParams.get('p');
 
         if (prompt) {
             const responseElement = document.getElementById('response');
-            responseElement.textContent = 'Loading...';
+            responseElement.textContent = 'Loading... Please wait.';
             responseElement.className = 'loading';
 
             fetchResponse(decodeURIComponent(prompt))
@@ -107,7 +112,7 @@
                     responseElement.className = '';
                 })
                 .catch(error => {
-                    responseElement.textContent = `Error: ${error.message}`;
+                    responseElement.textContent = `Error: ${error.message}. Please check your network connection and try again.`;
                     responseElement.className = 'error';
                 });
         }
